@@ -2,7 +2,6 @@
 
 Object.defineProperty(exports, '__esModule', { value: true });
 
-var axios = require('axios');
 var vue = require('vue');
 
 class BreadcrumbManager {
@@ -154,8 +153,28 @@ class RateLimiter {
         this.errorHashes.set(errorHash, now);
     }
     generateErrorHash(errorData) {
-        const key = `${errorData.message}-${errorData.file}-${errorData.line}`;
+        const stackSignature = this.extractStackSignature(errorData.stackTrace || '', 3);
+        const messageSignature = (errorData.message || '').substring(0, 100);
+        const errorType = errorData.level || 'error';
+        const key = `${stackSignature}|${messageSignature}|${errorType}`;
         return btoa(key).replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
+    }
+    extractStackSignature(stackTrace, depth = 3) {
+        if (!stackTrace)
+            return '';
+        const lines = stackTrace.split('\n');
+        const meaningfulFrames = lines.filter(line => {
+            const trimmed = line.trim();
+            return trimmed &&
+                !trimmed.includes('chrome-extension://') &&
+                !trimmed.includes('webpack://') &&
+                (trimmed.includes('.vue') || trimmed.includes('.js') || trimmed.includes('.ts'));
+        });
+        const frames = meaningfulFrames.slice(0, depth);
+        const normalizedFrames = frames.map(frame => {
+            return frame.replace(/:\d+:\d+/g, ':XX:XX').replace(/:\d+/g, ':XX');
+        });
+        return normalizedFrames.join('|');
     }
     removeExpiredRequests(now) {
         const cutoff = now - this.config.windowMs;
@@ -1534,17 +1553,16 @@ class ErrorReporter {
             monthlyLimit: 10000,
             burstLimit: 50,
             burstWindowMs: 60000,
-            enableCompression: true,
+            enableCompression: config.environment === 'production',
             compressionThreshold: 1024,
             compressionLevel: 6,
-            enableBatching: true,
+            enableBatching: config.environment === 'production',
             batchSize: 5,
             batchTimeout: 5000,
             maxBatchPayloadSize: 100 * 1024,
             ...config
         };
         this.initializeServices();
-        this.setupHttpClient();
         this.initialize();
     }
     initializeServices() {
@@ -1594,15 +1612,6 @@ class ErrorReporter {
         });
         this.offlineManager.setSendFunction((errorData) => this.sendErrorDirectly(errorData));
         this.batchManager.setSendFunction((batchData) => this.sendBatchDirectly(batchData));
-    }
-    setupHttpClient() {
-        this.httpClient = axios.create({
-            timeout: this.config.timeout,
-            headers: {
-                'Content-Type': 'application/json',
-                'User-Agent': `ErrorExplorer-Vue/${this.config.version || '1.0.0'}`
-            }
-        });
     }
     initialize() {
         if (!this.config.enabled) {
@@ -1846,21 +1855,35 @@ class ErrorReporter {
         const compressed = await this.compressionService.compress(jsonData);
         const isCompressed = compressed !== jsonData;
         const headers = {
-            ...this.compressionService.getCompressionHeaders(isCompressed),
-            ...this.httpClient.defaults.headers
+            ...this.compressionService.getCompressionHeaders(isCompressed)
         };
         if (isCompressed && compressed instanceof ArrayBuffer) {
-            return await this.httpClient.post(this.config.webhookUrl, compressed, {
+            const response = await fetch(this.config.webhookUrl, {
+                method: 'POST',
+                body: compressed,
                 headers: {
                     ...headers,
                     'Content-Type': 'application/octet-stream'
                 }
             });
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return await response.json().catch(() => ({}));
         }
         else {
-            return await this.httpClient.post(this.config.webhookUrl, compressed, {
-                headers
+            const response = await fetch(this.config.webhookUrl, {
+                method: 'POST',
+                body: compressed,
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/json'
+                }
             });
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return await response.json().catch(() => ({}));
         }
     }
     getRequestData() {

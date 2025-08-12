@@ -182,14 +182,12 @@ declare class ErrorReporter {
     private circuitBreaker;
     private compressionService;
     private batchManager;
-    private httpClient;
     private userContext;
     private globalContext;
     private sessionId;
     private isInitialized;
     constructor(config: ErrorExplorerConfig);
     private initializeServices;
-    private setupHttpClient;
     private initialize;
     private setupGlobalHandlers;
     private setupConsoleCapture;
@@ -277,6 +275,7 @@ declare class RateLimiter {
     canSendError(errorData: ErrorData): RateLimitInfo;
     markErrorSent(errorData: ErrorData): void;
     private generateErrorHash;
+    private extractStackSignature;
     private removeExpiredRequests;
     private getNextResetTime;
     cleanup(): void;
