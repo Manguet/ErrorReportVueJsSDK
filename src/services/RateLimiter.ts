@@ -76,9 +76,43 @@ export class RateLimiter {
   }
 
   private generateErrorHash(errorData: ErrorData): string {
-    // Generate hash based on error message, stack trace, and file/line
-    const key = `${errorData.message}-${errorData.file}-${errorData.line}`;
+    // Enhanced fingerprint combining stack trace signature + message
+    const stackSignature = this.extractStackSignature(errorData.stackTrace || '', 3);
+    const messageSignature = (errorData.message || '').substring(0, 100);
+    const errorType = errorData.level || 'error';
+    
+    // Combine signatures
+    const key = `${stackSignature}|${messageSignature}|${errorType}`;
     return btoa(key).replace(/[^a-zA-Z0-9]/g, '').substring(0, 32);
+  }
+
+  /**
+   * Extract stack trace signature by taking the first N meaningful frames
+   * and normalizing line numbers to avoid over-segmentation
+   */
+  private extractStackSignature(stackTrace: string, depth: number = 3): string {
+    if (!stackTrace) return '';
+    
+    const lines = stackTrace.split('\n');
+    
+    // Filter meaningful frames (ignore empty lines and browser internals)
+    const meaningfulFrames = lines.filter(line => {
+      const trimmed = line.trim();
+      return trimmed && 
+             !trimmed.includes('chrome-extension://') &&
+             !trimmed.includes('webpack://') &&
+             (trimmed.includes('.vue') || trimmed.includes('.js') || trimmed.includes('.ts'));
+    });
+    
+    // Take first N frames
+    const frames = meaningfulFrames.slice(0, depth);
+    
+    // Normalize each frame (remove specific line numbers)
+    const normalizedFrames = frames.map(frame => {
+      return frame.replace(/:\d+:\d+/g, ':XX:XX').replace(/:\d+/g, ':XX');
+    });
+    
+    return normalizedFrames.join('|');
   }
 
   private removeExpiredRequests(now: number): void {

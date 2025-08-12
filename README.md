@@ -22,7 +22,7 @@ import App from './App.vue';
 const app = createApp(App);
 
 app.use(ErrorExplorerPlugin, {
-  webhookUrl: 'https://your-domain.com/webhook/project-token',
+  webhookUrl: 'https://error-explorer.com/webhook/project-token',
   projectName: 'my-vue-app',
   environment: 'production'
 });
@@ -110,7 +110,7 @@ import { createErrorExplorer, captureException } from 'error-explorer-vuejs-repo
 
 // Initialize
 const errorReporter = createErrorExplorer({
-  webhookUrl: 'https://your-domain.com/webhook/project-token',
+  webhookUrl: 'https://error-explorer.com/webhook/project-token',
   projectName: 'my-vue-app',
   environment: 'production'
 });
@@ -134,7 +134,7 @@ try {
 
 ```javascript
 app.use(ErrorExplorerPlugin, {
-  webhookUrl: 'https://your-domain.com/webhook/project-token',
+  webhookUrl: 'https://error-explorer.com/webhook/project-token',
   projectName: 'my-vue-app',
   environment: 'production',                    // Default: 'production'
   enabled: true,                                // Default: true
@@ -146,6 +146,11 @@ app.use(ErrorExplorerPlugin, {
   captureUnhandledRejections: true,            // Default: true
   captureConsoleErrors: false,                 // Default: false
   commitHash: null,                            // Optional: Git commit hash
+  
+  // Compression and batching (automatically disabled in development)
+  enableCompression: true,                     // Default: true in production, false in development
+  enableBatching: true,                        // Default: true in production, false in development
+  
   beforeSend: (data) => {                      // Optional: Filter/modify data
     // Filter sensitive data
     if (data.context?.password) {
@@ -353,6 +358,55 @@ if (duration > 1000) {
 }
 ```
 
+## Local Development & CORS Issues
+
+### Development Configuration
+
+For local development, the SDK automatically disables compression and batching to avoid CORS issues. However, you can explicitly configure it:
+
+```javascript
+app.use(ErrorExplorerPlugin, {
+  webhookUrl: 'http://error-explorer.localhost/webhook/error/your-token',
+  projectName: 'my-vue-app',
+  environment: 'development',
+  debug: true,
+  enableCompression: false,        // Avoid CORS issues
+  enableBatching: false           // Send errors immediately
+});
+```
+
+### Common CORS Issues
+
+If you encounter CORS errors like:
+- `Request header field content-encoding is not allowed by Access-Control-Allow-Headers`
+- `Request header field x-sdk-version is not allowed by Access-Control-Allow-Headers`
+
+**Solution**: The SDK has been updated to avoid these issues by:
+1. Using only standard headers (`Content-Type: application/json`)
+2. Automatically disabling compression in development mode
+3. Using native fetch API instead of axios
+
+### Troubleshooting
+
+**Problem**: Errors are not appearing in Error Explorer dashboard
+**Solution**: 
+1. Check browser console for network errors
+2. Ensure your webhook URL is correct
+3. Verify CORS is properly configured on your Error Explorer server
+4. Try disabling compression and batching for testing
+
+**Problem**: "Failed to fetch" errors
+**Solution**:
+1. Check that your Error Explorer server is accessible
+2. Verify the webhook URL format: `http://error-explorer/webhook/error/your-token`
+3. Test the webhook URL directly with curl
+
+```bash
+curl -X POST http://error-explorer.localhost/webhook/error/your-token \
+  -H "Content-Type: application/json" \
+  -d '{"message":"test","project":"test"}'
+```
+
 ## TypeScript Support
 
 This package includes full TypeScript definitions:
@@ -361,7 +415,7 @@ This package includes full TypeScript definitions:
 import { ErrorExplorerConfig } from 'error-explorer-vuejs-reporter';
 
 const config: ErrorExplorerConfig = {
-  webhookUrl: 'https://your-domain.com/webhook/project-token',
+  webhookUrl: 'https://error-explorer.com/webhook/project-token',
   projectName: 'my-vue-app',
   environment: 'production'
 };
@@ -370,7 +424,7 @@ const config: ErrorExplorerConfig = {
 ## Environment Variables
 
 ```bash
-VUE_APP_ERROR_EXPLORER_WEBHOOK_URL=https://your-domain.com/webhook/project-token
+VUE_APP_ERROR_EXPLORER_WEBHOOK_URL=https://error-explorer.com/webhook/project-token
 VUE_APP_ERROR_EXPLORER_PROJECT_NAME=my-vue-app
 VUE_APP_ERROR_EXPLORER_ENVIRONMENT=production
 ```

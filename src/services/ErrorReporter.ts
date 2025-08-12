@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+// Remove axios import - we'll use fetch instead
 import { ErrorExplorerConfig, ErrorData, RequestData, BrowserData, UserContext, SDKStats, SDKHealth, QuotaStats } from '../types';
 import { BreadcrumbManager } from './BreadcrumbManager';
 import { RateLimiter } from './RateLimiter';
@@ -27,7 +27,7 @@ export class ErrorReporter {
   private compressionService: CompressionService;
   private batchManager: BatchManager;
   
-  private httpClient: AxiosInstance;
+  // Removed httpClient - using fetch directly
   private userContext: UserContext = {};
   private globalContext: Record<string, any> = {};
   private sessionId: string;
@@ -72,13 +72,13 @@ export class ErrorReporter {
       burstLimit: 50,
       burstWindowMs: 60000,
       
-      // Compression defaults
-      enableCompression: true,
+      // Compression defaults - disabled by default to avoid CORS issues
+      enableCompression: config.environment === 'production',
       compressionThreshold: 1024,
       compressionLevel: 6,
       
-      // Batching defaults
-      enableBatching: true,
+      // Batching defaults - disabled by default to avoid issues in development
+      enableBatching: config.environment === 'production',
       batchSize: 5,
       batchTimeout: 5000,
       maxBatchPayloadSize: 100 * 1024,
@@ -87,7 +87,6 @@ export class ErrorReporter {
     };
 
     this.initializeServices();
-    this.setupHttpClient();
     this.initialize();
   }
 
@@ -157,15 +156,7 @@ export class ErrorReporter {
     this.batchManager.setSendFunction((batchData) => this.sendBatchDirectly(batchData));
   }
 
-  private setupHttpClient(): void {
-    this.httpClient = axios.create({
-      timeout: this.config.timeout,
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': `ErrorExplorer-Vue/${this.config.version || '1.0.0'}`
-      }
-    });
-  }
+  // Removed setupHttpClient method - using fetch directly
 
   private initialize(): void {
     if (!this.config.enabled) {
@@ -483,24 +474,42 @@ export class ErrorReporter {
     const compressed = await this.compressionService.compress(jsonData);
     const isCompressed = compressed !== jsonData;
     
-    const headers = {
-      ...this.compressionService.getCompressionHeaders(isCompressed),
-      ...this.httpClient.defaults.headers
+    const headers: Record<string, string> = {
+      ...this.compressionService.getCompressionHeaders(isCompressed)
     };
 
     if (isCompressed && compressed instanceof ArrayBuffer) {
       // Send binary data
-      return await this.httpClient.post(this.config.webhookUrl, compressed, {
+      const response = await fetch(this.config.webhookUrl, {
+        method: 'POST',
+        body: compressed,
         headers: {
           ...headers,
           'Content-Type': 'application/octet-stream'
         }
       });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json().catch(() => ({}));
     } else {
       // Send as JSON (either uncompressed or base64 compressed)
-      return await this.httpClient.post(this.config.webhookUrl, compressed, {
-        headers
+      const response = await fetch(this.config.webhookUrl, {
+        method: 'POST',
+        body: compressed,
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json'
+        }
       });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json().catch(() => ({}));
     }
   }
 
